@@ -1,0 +1,48 @@
+Here is a refined draft for your DAY 2 log entry, formatted to fit your portfolio structure while keeping your casual, first-person voice front and center.
+DAY 2: SSH Key-Based Authentication & Disabling Passwords
+
+Goal: Ditch plain-text password authentication for SSH, set up asymmetric cryptographic keys, and lock down the daemon so passwords can't even be attempted.
+What I Did
+
+    Generated an Ed25519 Key Pair (Host):
+    Ran ssh-keygen -t ed25519 -C "flow-abdcomputar-key" on my host machine.
+
+        Chosen Ed25519 over RSA because it’s faster, modern, and uses shorter, super-secure elliptic curve keys.
+
+        Added a strong passphrase to encrypt the private key file (~/.ssh/id_ed25519) on disk.
+
+    Deployed Public Key to VM:
+    Used ssh-copy-id -i ~/.ssh/id_ed25519.pub abdullahthexpert@192.168.1.5 to append my public key straight into ~/.ssh/authorized_keys on abdcomputar.
+
+        Lesson learned on syntax: Caught myself trying ~./ssh and ./ssh when checking the files. Path syntax matters: ~/.ssh is the hidden directory inside my home folder.
+
+        Confirmed permissions auto-set to 0600 (-rw-------), meaning only my user can read/write to authorized_keys.
+
+    Hardened SSH Configuration (/etc/ssh/sshd_config):
+    Uncommented and edited key security directives in the SSH daemon config using nano:
+
+        PasswordAuthentication no — stops the server from accepting password-based logins.
+
+        PubkeyAuthentication yes — enforces key-based logins.
+
+        KbdInteractiveAuthentication no — blocks PAM challenge-response password fallbacks.
+
+    Tested & Verified (The Zero-Lockout Habit):
+
+        Ran sudo sshd -t to test syntax before restarting — returned zero errors (silence = success).
+
+        Applied changes with sudo systemctl restart ssh.
+
+        Audited active runtime settings using sudo sshd -T | grep -E -i "passwordauthentication|kbdinteractiveauthentication" to confirm both flags were explicitly set to no.
+
+        The Final Proof Test: Forced a password-only attempt with no identity keys attached:
+        ssh -i /dev/null -o PubkeyAuthentication=no abdullahthexpert@192.168.1.5
+        Result: Permission denied (publickey). Total lockdown achieved.
+
+Security Takeaways
+
+    Asymmetric Cryptography: The private key (id_ed25519) never leaves my host computer. The server only holds the public key (authorized_keys). During login, the server sends a challenge encrypted with the public key, which my host proves it can solve with the matching private key. Passwords never cross the wire.
+
+    Key Passphrases: Encrypting the private key with a passphrase adds a 2nd factor: even if someone steals my private key file, it's useless without my passphrase.
+
+    Preventing Overrides: Always check runtime configuration with sshd -T to ensure drop-in configs in /etc/ssh/sshd_config.d/ aren't secretly overriding main security rules.
