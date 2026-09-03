@@ -1,0 +1,61 @@
+### DAY 3: Log Analysis & Automated Defense with Fail2ban
+
+**Goal:** Move from manual SSH hardening to active threat monitoring and automated incident response by analyzing system authentication logs and deploying an Intrusion Prevention System (IPS).
+
+---
+
+#### What I Did
+
+* **Generated Simulated Attack Traffic (Host):**
+  * Sent intentional failed connection attempts from my host machine using non-existent accounts (e.g., `ssh hacker@192.168.1.5`).
+  * Observed how the server responds when valid key pairs aren't presented versus when valid keys match `~/.ssh/authorized_keys`.
+
+* **Parsed System Logs (`journalctl`):**
+  * Checked live SSH service authentication logs using `sudo journalctl -u ssh -n 20`.
+  * Located attack signatures in real time: `Invalid user hacker from 192.168.1.6`.
+  * Identified the three critical pieces of data captured in every auth log: **Intent** (`Invalid user`), **Vector** (`sshd`), and **Source IP** (`192.168.1.6`).
+
+* **Deployed Fail2ban (IPS):**
+  * Installed Fail2ban via `sudo apt update && sudo apt install fail2ban -y`.
+  * Created a local jail configuration at `/etc/fail2ban/jail.local` to override defaults without breaking package update paths.
+
+```ini
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+maxretry = 3
+findtime = 10m
+bantime = 1h
+
+## Tested Automated Enforcement & Incident Response: ##
+
+        Enabled and started the service immediately: sudo systemctl enable --now fail2ban.
+
+        Triggered a failed login attempt from host -> monitored the jail state using sudo fail2ban-client status sshd -> saw Currently banned jump from 0 to 1.
+
+        Exercised manual SOC control by unbanning my host IP address: sudo fail2ban-client set sshd unbanip <HOST_IP>.
+
+Security Takeaways
+
+    Log Parsing as a First Line of Defense: Services log every authentication event. Knowing how to filter systemd journals (journalctl -u ssh) allows analysts to quickly correlate failed attempts to potential brute-force campaigns or unauthorized access sweeps.
+
+    Observation Windows vs. Hard Limits:
+
+        findtime = 10m: The rolling observation window Fail2ban inspects.
+
+        maxretry = 3: The threshold of failures allowed inside that window.
+
+        bantime = 1h: The time penalty applied to the firewall once triggered.
+
+    Dynamic Firewall Management: Fail2ban operates above standard UFW/iptables by dynamically injecting temporary DROP rules when log patterns match filter definitions.
+
+    Configuration Hierarchy: Never modify /etc/fail2ban/jail.conf directly. Always use jail.local to preserve custom configurations across package upgrades.
+
+Useful Commands Checklist
+
+    > sudo journalctl -u ssh -n 50 — View last 50 lines of SSH logs.
+
+    > sudo fail2ban-client status sshd — Check active jail status and banned IPs.
+
+    > sudo fail2ban-client set sshd unbanip <IP> — Manually lift a ban on a specific IP.
